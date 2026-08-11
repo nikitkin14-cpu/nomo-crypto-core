@@ -1,107 +1,112 @@
 """
-Nomo Messenger — Ed25519 Authentication Module
-
-This module provides:
-- Generation of Ed25519 key pairs
-- Signing and verification of messages
-- Key serialization (PEM format)
-
-No phone number. No email. No password. Your key IS your identity.
+Ed25519 аутентификация для Nomo Messenger.
+Генерация ключей, подпись, проверка, отпечаток.
 """
 
+import hashlib
 import base64
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ed25519
-from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey, Ed25519PublicKey
+)
 
 
-def generate_key_pair():
-    """
-    Generate a new Ed25519 key pair.
-
+def generate_keypair() -> tuple[str, str]:
+    """Генерирует пару ключей Ed25519.
+    
     Returns:
-        tuple: (private_key_pem, public_key_pem) — both as strings in PEM format.
+        (private_pem, public_pem) — ключи в PEM-формате
     """
-    private_key = ed25519.Ed25519PrivateKey.generate()
+    private_key = Ed25519PrivateKey.generate()
     public_key = private_key.public_key()
-
-    # Serialize private key
+    
     private_pem = private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption()
     ).decode('utf-8')
-
-    # Serialize public key
+    
     public_pem = public_key.public_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo
     ).decode('utf-8')
-
+    
     return private_pem, public_pem
 
 
-def sign_message(private_key_pem: str, message: bytes) -> str:
-    """
-    Sign a message using the private key.
-
+def sign_message(private_pem: str, message: bytes) -> bytes:
+    """Подписывает сообщение приватным ключом.
+    
     Args:
-        private_key_pem: Private key in PEM format.
-        message: Message to sign (bytes).
-
+        private_pem: приватный ключ в PEM
+        message: сообщение для подписи
+    
     Returns:
-        str: Base64-encoded signature.
+        подпись (64 байта)
     """
-    private_key = serialization.load_pem_private_key(
-        private_key_pem.encode('utf-8'),
-        password=None,
-        backend=default_backend()
+    private_key = Ed25519PrivateKey.from_private_bytes(
+        _pem_to_raw_private(private_pem)
     )
-    signature = private_key.sign(message)
-    return base64.b64encode(signature).decode('utf-8')
+    return private_key.sign(message)
 
 
-def verify_signature(public_key_pem: str, message: bytes, signature_b64: str) -> bool:
-    """
-    Verify a message signature using the public key.
-
+def verify_signature(public_pem: str, message: bytes, signature: bytes) -> bool:
+    """Проверяет подпись сообщения.
+    
     Args:
-        public_key_pem: Public key in PEM format.
-        message: Original message (bytes).
-        signature_b64: Base64-encoded signature.
-
+        public_pem: публичный ключ в PEM
+        message: исходное сообщение
+        signature: подпись для проверки
+    
     Returns:
-        bool: True if signature is valid, False otherwise.
+        True если подпись валидна
     """
     try:
-        public_key = serialization.load_pem_public_key(
-            public_key_pem.encode('utf-8'),
-            backend=default_backend()
+        public_key = Ed25519PublicKey.from_public_bytes(
+            _pem_to_raw_public(public_pem)
         )
-        signature = base64.b64decode(signature_b64)
         public_key.verify(signature, message)
         return True
     except Exception:
         return False
 
 
-def get_public_key_fingerprint(public_key_pem: str) -> str:
-    """
-    Generate a human-readable fingerprint from a public key.
-
+def get_key_fingerprint(public_pem: str) -> str:
+    """Возвращает отпечаток публичного ключа.
+    
     Args:
-        public_key_pem: Public key in PEM format.
-
+        public_pem: публичный ключ в PEM
+    
     Returns:
-        str: First 16 characters of SHA256 fingerprint.
+        первые 16 символов SHA256 хеша ключа
     """
-    import hashlib
-    public_key = serialization.load_pem_public_key(
-        public_key_pem.encode('utf-8'),
-        backend=default_backend()
+    raw = _pem_to_raw_public(public_pem)
+    return hashlib.sha256(raw).hexdigest()[:16]
+
+
+def get_public_key_base64(public_pem: str) -> str:
+    """Возвращает публичный ключ в base64 (32 байта)."""
+    raw = _pem_to_raw_public(public_pem)
+    return base64.b64encode(raw).decode('utf-8')
+
+
+def get_private_key_base64(private_pem: str) -> str:
+    """Возвращает приватный ключ в base64 (32 байта)."""
+    raw = _pem_to_raw_private(private_pem)
+    return base64.b64encode(raw).decode('utf-8')
+
+
+def _pem_to_raw_private(pem: str) -> bytes:
+    """Извлекает сырые байты приватного ключа из PEM."""
+    key = serialization.load_pem_private_key(
+        pem.encode('utf-8'), password=None
     )
-    key_bytes = public_key.public_bytes(
-        encoding=serialization.Encoding.Raw,
-        format=serialization.PublicFormat.Raw
+    return key.private_bytes_raw()
+
+
+def _pem_to_raw_public(pem: str) -> bytes:
+    """Извлекает сырые байты публичного ключа из PEM."""
+    key = serialization.load_pem_public_key(
+        pem.encode('utf-8')
     )
-    return hashlib.sha256(key_bytes).hexdigest()[:16]
+    return key.public_bytes_raw()
